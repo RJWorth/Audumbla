@@ -3,10 +3,74 @@
 import random, copy
 import DiskOOP as d
 import numpy as np
-from mDust import mAnnulus
 from numpy import pi,sqrt
 from cgs_constants import mSun,mEarth,AU,G
+import multiprocessing as mp
 
+###############################################################################
+def AnnulusBody(disk, r0,r1):
+	"""Return a body with the aggregate properties of a disk annulus."""
+
+#		r0 = self.r_i + da*i	# inner edge of annulus
+#		r1 = min(r0 + da,self.r_out)			# outer edge of annulus
+	Annulus       = copy.deepcopy(disk)
+	Annulus.r_i   = r0
+	Annulus.r_out = r1
+	m = Annulus.mDust()
+	return d.Body(a=r0, m=m, M=disk.M)
+
+###############################################################################
+def mAnnulus(ri,ro,alpha,sigma0cgs):
+	'''Calculate the mass in mSun of a dust disk with slope alpha, 
+	density sigma0.cgs in g/cm^2 at 1 AU, inner edge ri, 
+	and outer/truncation radius ro.'''
+### Make sure the inputs are written as floats, not integers
+
+### Two alpha value cases allowed
+	assert ((alpha==1.5) | (alpha==1))
+	assert (ro>= ri)
+
+	import numpy as np
+	from numpy import pi
+	from cgs_constants import mSun, AU
+
+### Convert sigma to mSun/AU^2
+	sigma0 = sigma0cgs*AU**2./mSun
+	if alpha==1:
+		sigma0=0.303*sigma0	# normalization based on equal-mass 36-AU disks -- 5/4/15
+
+### Calculate mTot in annulus with specified density profile
+	if alpha==1.5:
+		mTot = 4.*pi*sigma0* (1)**1.5 *(ro**0.5 - ri**0.5)
+	elif alpha==1:
+		mTot = 2.*pi*sigma0* (1)      *(ro      - ri)
+
+	return mTot
+###############################################################################
+def rAnnulus(ri,m,alpha,sigma0cgs):
+	'''Calculate the outer radius of a disk annulus with dust mass m, 
+	slope alpha, density sigma0, and inner radius ri.'''
+### Make sure the inputs are written as floats, not integers
+
+### Two alpha value cases allowed
+	assert ((alpha==1.5) | (alpha==1))
+
+#	import numpy as np
+#	from numpy import pi
+#	from cgs_constants import mSun, AU
+
+### Convert sigma to mSun/AU^2
+	sigma0 = sigma0cgs*AU**2./mSun
+	if alpha==1:
+		sigma0=0.303*sigma0	# normalization based on equal-mass 36-AU disks -- 5/4/15
+
+### Calculate mTot in annulus with specified density profile
+	if alpha==1.5:
+		ro = (m/(4.*pi*sigma0* (1)**1.5) + ri**0.5)**2.
+	elif alpha==1:
+		ro =  m/(2.*pi*sigma0* (1)     ) + ri
+
+	return ro
 ###############################################################################
 class Body(object):
 	"""An orbiting body in a debris disk."""
@@ -245,11 +309,11 @@ class DebrisDisk(list):
 		while (len(ind)>0):
 			if ((counter>0) | (i=='default')):
 				i = random.choice(ind)
-			mergehist = planets.PltFormTilClear(i))
+			mergehist = planets.PltFormTilClear(i)
 			planets = mergehist[-1]
 			for pl in mergehist:
-				param_a.extend(pl.ListParams()[0])
-				param_m.extend(pl.ListParams()[1])
+				param_a.append(pl.ListParams()[0])
+				param_m.append(pl.ListParams()[1])
 
 			ind  = range(len(planets)-1)
 			ind2 = range(len(planets)-1)
@@ -288,7 +352,32 @@ class Disk(object):
 		self.debris  = debris	# list of objects in debris disk
 
 #-----------------------------------------------------------------------------#
-	def DebrisGen(self,da,override=False):
+	def DebrisGenM(self,m,override=False):
+		'''Populate the debris disk with Bodies with uniform mass m,
+		based on the properties of the Disk.'''
+
+		if override != True:
+			assert(len(self.debris)==0),'Debris disk already exists!'
+		else:
+			print('Manually overwriting any existing debris disk')
+
+		r = self.r_i
+		objlist = []
+		while (r<=self.r_out):
+			objlist.append(d.Body(r=r, m = m, M = self.M))
+			r += d.rAnnulus(r, m, self.alpha,self.sig*self.sig_r)
+
+#		expanse = self.r_out - self.r_i
+#		N = int(np.ceil(expanse/da))
+
+#		pool = mp.Pool(4)
+#		objlist = [pool.apply(d.AnnulusBody, args=(self, self.r_i + da*i,
+#						   min(self.r_i + da*i + da,self.r_out) ) )
+#														 for i in range(N)]
+		self.debris = d.DebrisDisk( objlist )
+
+#-----------------------------------------------------------------------------#
+	def DebrisGenA(self,da,override=False):
 		'''Populate the debris disk with Bodies with uniform spacing da,
 		based on the properties of the Disk.'''
 
@@ -299,17 +388,19 @@ class Disk(object):
 
 		expanse = self.r_out - self.r_i
 		N = int(np.ceil(expanse/da))
-#		self.debris = ['' for i in range(N)]
-		self.debris = d.DebrisDisk()
+#		self.debris    = d.DebrisDisk([d.Body(0,0) for i in range(N)])
+#		for i in range(N):
+#			self.debris[i] = self.AnnulusBody(self.r_i + da*i, 
+#										  min(self.r_i + da*i + da,self.r_out)) 
 
-		for i in range(N):
-			r0 = self.r_i + da*i	# inner edge of annulus
-			r1 = min(r0 + da,self.r_out)			# outer edge of annulus
-			Annulus = copy.deepcopy(self)
-			Annulus.r_i = r0
-			Annulus.r_out = r1
-			m = Annulus.mDust()*mEarth/mSun
-			self.debris.append(Body(a=r0, m=m, M=self.M))
+		pool = mp.Pool(4)
+		objlist = [pool.apply(d.AnnulusBody, args=(self, self.r_i + da*i,
+						   min(self.r_i + da*i + da,self.r_out) ) )
+														 for i in range(N)]
+#		objlist = [d.AnnulusBody(self, self.r_i + da*i,
+#						   min(self.r_i + da*i + da,self.r_out) )
+#														 for i in range(N)]
+		self.debris = d.DebrisDisk( objlist )
 
 #-----------------------------------------------------------------------------#
 	def printargs(self):
@@ -321,23 +412,23 @@ class Disk(object):
 	def mGas(self):
 		"""Gas mass of disk object."""
 
-		s = self.sig*self.sigma_g	#*AU**2./mEarth
-		mGas = mAnnulus(self.r_i,self.r_out,self.alpha,s)
+		s = self.sig*self.sigma_g	
+		mGas = d.mAnnulus(self.r_i,self.r_out,self.alpha,s)
 		return mGas
 
 #-----------------------------------------------------------------------------#
 	def mDust(self):
 		"""Dust mass of disk object."""
 
-		sr = self.sig*self.sigma_r	#*AU**2./mEarth
-		si = self.sig*self.sigma_i	#*AU**2./mEarth
+		sr = self.sig*self.sigma_r	
+		si = self.sig*self.sigma_i	
 
 	### Inside ice line
 		if (self.r_i < self.r_ice):
 			if (self.r_out >= self.r_ice):
-				mDust1 = mAnnulus(self.r_i,self.r_ice,self.alpha,sr)
+				mDust1 = d.mAnnulus(self.r_i,self.r_ice,self.alpha,sr)
 			elif (self.r_out < self.r_ice):
-				mDust1 = mAnnulus(self.r_i,self.r_out,self.alpha,sr)
+				mDust1 = d.mAnnulus(self.r_i,self.r_out,self.alpha,sr)
 		else:
 			mDust1 = 0.
 #			print('no inner disk')
@@ -345,9 +436,9 @@ class Disk(object):
 	### Outside ice line
 		if (self.r_out > self.r_ice): 
 			if (self.r_i <= self.r_ice):
-				mDust2 = mAnnulus(self.r_ice,self.r_out,self.alpha,si)
+				mDust2 = d.mAnnulus(self.r_ice,self.r_out,self.alpha,si)
 			elif (self.r_i > self.r_ice):
-				mDust2 = mAnnulus(self.r_i,self.r_out,self.alpha,si)
+				mDust2 = d.mAnnulus(self.r_i,self.r_out,self.alpha,si)
 		else:
 			mDust2 = 0.
 #			print('no outer disk')

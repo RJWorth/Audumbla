@@ -9,7 +9,7 @@ da=0.005	# can't run plt form on this size -- python gets killed (memory probabl
 
 reload(d)
 disk = d.Disk(r_out=5.,sig=1.)
-disk.DebrisGen(.001)
+disk.DebrisGen(da)
 ### RH/da ratio at center
 p3 = [disk.debris]
 mid = (len(p3[0])/2)
@@ -20,14 +20,17 @@ p, p_a, p_m = disk.debris.PltFormSuccessiveClearings(10)
 
 
 
-for i in range(len(p3)):
-	for j in range(len(p3[i].ListParams()[0])):
-		plt.plot(i, p3[i].ListParams()[0][j], 'ro')
+for i in range(len(p_a)):
+	plt.plot([i for n in range(len(p_a[i]))], p_a[i], 'ro')
 
 plt.savefig('s{0}da{0}r10.png'.format(s,da))
 plt.clf()
 
-
+### How does RH2 change with a?
+r = [disk.debris[i].RH2(disk.debris[i+1]) for i in range(len(disk.debris)-1)]
+a = [disk.debris[i].a                     for i in range(len(disk.debris)-1)]
+plt.plot(a,r)
+plt.show()
 
 
 #reload(d)
