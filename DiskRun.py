@@ -16,7 +16,7 @@ mid = (len(p3[0])/2)
 print( abs(p3[0][mid].a-p3[0][mid+1].a),p3[0][mid].RH2(p3[0][mid+1]), 
        abs(p3[0][mid].a-p3[0][mid+1].a)/p3[0][mid].RH2(p3[0][mid+1]) )
 
-p3 = disk.debris.PltFormSuccessiveClearings(10)
+p, p_a, p_m = disk.debris.PltFormSuccessiveClearings(10)
 
 
 

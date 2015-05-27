@@ -235,26 +235,32 @@ class DebrisDisk(list):
 		'''Pick one object, collide till clear, pick another and repeat
 		until all are isolated. Then output the resulting list of Bodies.'''
 
-		planets = [copy.deepcopy(self)]
+		planets = copy.deepcopy(self)
+		param_a = [planets.ListParams()[0]]
+		param_m = [planets.ListParams()[1]]
 		counter = 0
-		N = len(planets[0])
+		N = len(planets)
 		ind = range(N-1)
 
 		while (len(ind)>0):
 			if ((counter>0) | (i=='default')):
 				i = random.choice(ind)
-			planets.extend(planets[-1].PltFormTilClear(i)[1:])
+			mergehist = planets.PltFormTilClear(i))
+			planets = mergehist[-1]
+			for pl in mergehist:
+				param_a.extend(pl.ListParams()[0])
+				param_m.extend(pl.ListParams()[1])
 
-			ind  = range(len(planets[-1])-1)
-			ind2 = range(len(planets[-1])-1)
+			ind  = range(len(planets)-1)
+			ind2 = range(len(planets)-1)
 			for i in ind2:
-				this = planets[-1][i]
-				that = planets[-1][i+1]
+				this = planets[i]
+				that = planets[i+1]
 				if (not this.IsClose(that)):
 					ind.remove(i)
 			counter += 1
 
-		return planets
+		return planets, param_a, param_m
 		
 ###############################################################################
 class Disk(object):
