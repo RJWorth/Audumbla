@@ -130,7 +130,7 @@ class Body(object):
 		RH2 = ((self.m+other.m)/(3.*self.M))**(1./3.) * ((self.a+other.a)/2.)
 		return RH2		
 #-----------------------------------------------------------------------------#
-	def IsClose(self,other):
+	def IsClose(self,other,rh=10.):
 		'''Check if two adjacent objects are within their mutual Hill radius
 		of each other.'''
 
@@ -138,7 +138,7 @@ class Body(object):
 		da = abs(self.a - other.a)
 		RH = self.RH2(other)
 
-		if (10.*RH >= da):
+		if (rh*RH >= da):
 			coll = True
 		else:
 			coll = False
@@ -147,9 +147,17 @@ class Body(object):
 
 
 ###############################################################################
-class DebrisDisk(list):
-	"""A list of Bodies in a debris disk."""
+#class DebrisDisk(list):
+#	"""A list of Bodies in a debris disk."""
 
+class DebrisDisk(list):
+
+	def __init__(self, data, rh=10.):
+		list.__init__(self, data)
+		self.rh = rh
+	
+#	def times_two(self):
+#		return self * 2 
 #-----------------------------------------------------------------------------#
 #	def __init__(self):
 #		"""Instantialize object of DebrisDisk class."""
@@ -236,13 +244,13 @@ class DebrisDisk(list):
 				counter += 1
 				this = planets[-1][i]
 				that = planets[-1][i+1]
-				if (this.IsClose(that)):
+				if (this.IsClose(that, rh=self.rh)):
 					planets.append(planets[-1].Merge(i))
 #					ind = ind[0:i]+[j-1 for j in ind[(i+2):]]
 					merge = True
 				elif (i > 0):
 					that = planets[-1][i-1]
-					if (this.IsClose(that)):
+					if (this.IsClose(that, rh=self.rh)):
 						planets.append(planets[-1].Merge(i,out=False))
 #						ind = ind[0:(i-1)]+[j-1 for j in ind[(i+1):]]
 						merge = True
@@ -277,7 +285,7 @@ class DebrisDisk(list):
 			else:
 				this = planets[-1][i]
 				that = planets[-1][i+1]
-				if (this.IsClose(that)):
+				if (this.IsClose(that, rh=self.rh)):
 					planets.append(planets[-1].Merge(i))
 				else:
 					out = True
@@ -286,7 +294,7 @@ class DebrisDisk(list):
 			else:
 				this = planets[-1][i]
 				that = planets[-1][i-1]
-				if (this.IsClose(that)):
+				if (this.IsClose(that, rh=self.rh)):
 					planets.append(planets[-1].Merge(i,out=False))
 					i += -1
 				else:
@@ -320,7 +328,7 @@ class DebrisDisk(list):
 			for i in ind2:
 				this = planets[i]
 				that = planets[i+1]
-				if (not this.IsClose(that)):
+				if (not this.IsClose(that, rh=self.rh)):
 					ind.remove(i)
 			counter += 1
 
@@ -331,10 +339,10 @@ class Disk(object):
 	"""The entire disk, with arguments holding disk properties."""
 
 #-----------------------------------------------------------------------------#
-	def __init__(self, unit='cgs', M=1., alpha=1.5, sig=1.,
-		sigma_g=1700., sigma_i=30., sigma_r=7.1,
+	def __init__(self, unit='cgs', M=1., alpha=1.5, rh=10., 
+		sigC=1.,sigma_g=1700., sigma_i=30., sigma_r=7.1,
 		r_i=0.35, r_ice=2.7, r_out=36.,
-		debris=DebrisDisk()):
+		debris=[]):
 		"""Instantialize object of Disk class."""
 	
 		assert ((alpha == 1.5) | (alpha==1.))
@@ -342,14 +350,17 @@ class Disk(object):
 		self.unit    = unit		# over unit scheme used -- not using this yet
 		self.M       = M       	# mass of central body (mSun)
 		self.alpha   = alpha	# disk profile power law slope
-		self.sig     = sig     	# multiplier for surface density profile
+		self.rh      = rh      	# separation w/in which bodies merge, in RH2
+		self.sigC    = sigC    	# multiplier for surface density profile
 		self.sigma_g = sigma_g	# gas surface density normalization (g/cm^2)
 		self.sigma_i = sigma_i	# ice surface density normalization
 		self.sigma_r = sigma_r	# rock surface density normalization
+		self.sigma   = [sigma_r, sigma_i, sigma_g] # surface densities (rock, ice, gas)
 		self.r_i     = r_i		# inner edge (AU)
 		self.r_ice   = r_ice	# ice line
 		self.r_out   = r_out	# outer edge
-		self.debris  = debris	# list of objects in debris disk
+		self.r       = [r_i, r_ice, r_out] # radii of inner edge, ice line, outer edge
+		self.debris  = d.DebrisDisk( [], rh) # list of objects in debris disk
 
 #-----------------------------------------------------------------------------#
 	def DebrisGenM(self,m,override=False):
@@ -361,20 +372,44 @@ class Disk(object):
 		else:
 			print('Manually overwriting any existing debris disk')
 
-		r = self.r_i
+	### Start at inner edge of disk, add objects incrementing outward until
+	### ice line
+	### with adjustments made crossing ice line and at outer edge
+	### ri/ro = inner/outer radii of this annulus, m0 = mass of this annulus
+		ri = self.r_i
 		objlist = []
-		while (r<=self.r_out):
-			objlist.append(d.Body(r=r, m = m, M = self.M))
-			r += d.rAnnulus(r, m, self.alpha,self.sig*self.sig_r)
+		while ((ri<=self.r_out) & (ri<=self.r_ice)):
+			ro = d.rAnnulus(ri, m, self.alpha,self.sigC*self.sigma_r)
+#			print(ri,ro)
+			if (ro > self.r_ice):
+				m1 = d.mAnnulus(ri, self.r_ice,  self.alpha, self.sigC*self.sigma_r)
+				ro = d.rAnnulus(self.r_ice,m-m1,self.alpha, self.sigC*self.sigma_i)
+				m0 = m
+			if (ro > self.r_out):
+				if (( ri < self.r_ice) & (self.r_ice < ro)):
+					m1 = d.mAnnulus(ri,        self.r_ice,self.alpha,self.sigC*self.sigma_r)
+					m2 = d.mAnnulus(self.r_ice,self.r_out,self.alpha,self.sigC*self.sigma_i)
+					m0 = m1+m2
+					assert ( (m0) <= m )
+				else:
+					m0 = d.mAnnulus(ri,self.r_out,self.alpha,self.sigC*self.sigma_r)
+			else:
+				m0 = m
+			objlist.append(d.Body(a=ri, m = m0, M = self.M))
+			ri = ro
+	### Continue disk beyond ice line
+		while ((ri<=self.r_out) & (ri>=self.r_ice)):
+			ro = d.rAnnulus(ri, m, self.alpha,self.sigC*self.sigma_i)
+#			print(ri,ro)
+			if (ro <= self.r_out):
+				m0 = m
+			else:
+				m0 = d.mAnnulus(ri,self.r_out,self.alpha,self.sigC*self.sigma_i)
+			objlist.append(d.Body(a=ri, m = m0, M = self.M))
+			ri = ro
 
-#		expanse = self.r_out - self.r_i
-#		N = int(np.ceil(expanse/da))
-
-#		pool = mp.Pool(4)
-#		objlist = [pool.apply(d.AnnulusBody, args=(self, self.r_i + da*i,
-#						   min(self.r_i + da*i + da,self.r_out) ) )
-#														 for i in range(N)]
-		self.debris = d.DebrisDisk( objlist )
+#		print(len(objlist),m0,ri,ro)
+		self.debris = d.DebrisDisk( objlist, self.rh )
 
 #-----------------------------------------------------------------------------#
 	def DebrisGenA(self,da,override=False):
@@ -400,19 +435,19 @@ class Disk(object):
 #		objlist = [d.AnnulusBody(self, self.r_i + da*i,
 #						   min(self.r_i + da*i + da,self.r_out) )
 #														 for i in range(N)]
-		self.debris = d.DebrisDisk( objlist )
+		self.debris = d.DebrisDisk( objlist, self.rh )
 
 #-----------------------------------------------------------------------------#
 	def printargs(self):
 		"""Print the arguments of Disk object."""
 		print 'alpha  = {0}'.format(self.alpha)
-		print 'sigma coefficient = {0}'.format(self.sig)
+		print 'sigma coefficient = {0}'.format(self.sigC)
 
 #-----------------------------------------------------------------------------#
 	def mGas(self):
 		"""Gas mass of disk object."""
 
-		s = self.sig*self.sigma_g	
+		s = self.sigC*self.sigma_g	
 		mGas = d.mAnnulus(self.r_i,self.r_out,self.alpha,s)
 		return mGas
 
@@ -420,8 +455,8 @@ class Disk(object):
 	def mDust(self):
 		"""Dust mass of disk object."""
 
-		sr = self.sig*self.sigma_r	
-		si = self.sig*self.sigma_i	
+		sr = self.sigC*self.sigma_r	
+		si = self.sigC*self.sigma_i	
 
 	### Inside ice line
 		if (self.r_i < self.r_ice):
