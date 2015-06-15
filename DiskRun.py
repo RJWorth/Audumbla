@@ -1,15 +1,17 @@
 
-import DiskOOP as d
+import Disks as d
 import numpy as np
 import matplotlib.pyplot as plt
 from cgs_constants import mSun,mEarth,AU,G
 
-s=1.
-rh=10.
-dm=1.e-6
+rtr = 5.
+s   =10.
+rh  =10.
+dm  =1.e-7
+a   =1.5
 
 reload(d)
-disk = d.Disk(r_out=5.,sigC=s,rh=rh)
+disk = d.Disk(r_out=rtr, alpha=a, sigC=s, rh=rh)
 disk.DebrisGenM(dm)
 len(disk.debris)
 #disk.DebrisGenA(da)
@@ -20,12 +22,26 @@ len(disk.debris)
 #print( abs(p3[0][mid].a-p3[0][mid+1].a),p3[0][mid].RH2(p3[0][mid+1]), 
 #       abs(p3[0][mid].a-p3[0][mid+1].a)/p3[0][mid].RH2(p3[0][mid+1]) )
 
-p, p_a, p_m = disk.debris.PltFormSuccessiveClearings(10)
+pl ,pa,pm = disk.debris.PltFormTilClear(1000)
+pl1      = disk1.debris.PltFormTilClear(1000)
+
+p, p_a, p_m = disk.debris.PltFormSuccessiveClearings()
+#p1, p_a1, p_m1 = disk.debris.PltFormSuccessiveClearings()
+
+import cPickle as pickle
+pickle.dump(   p1, open(   "p1.p", "wb" ) )
+pickle.dump( p_a1, open( "p_a1.p", "wb" ) )
+pickle.dump( p_m1, open( "p_m1.p", "wb" ) )
+p1 = pickle.load( open( "p1.p", "rb" ) )
+
 
 for i in range(len(p_a)):
 	plt.plot([i for n in range(len(p_a[i]))], p_a[i], 'ro')
 
-plt.savefig('s{0}_r{1}_m{2}.png'.format(s,rh,dm))
+plt.xlabel('# of Collisions')
+plt.ylabel('Semimajor Axis (AU)')
+plt.title('Planetesimal Merging Heuristic')
+plt.savefig('s{0}_r{1}_m{2}_a{3}-1.png'.format(s,rh,dm,a))
 plt.clf()
 
 #plt.savefig('s{0}da{1}r10.png'.format(s,da))
