@@ -1,7 +1,7 @@
-from cgs_constants import mSun,mEarth,AU
+from cgs_constants import mSun,mEarth,mMoon,mMars,AU
 from cgs_constants import G as G_cgs
 from mks_constants import deg2rad,rad2deg
-from cgs_constants import G as G_mks
+from mks_constants import G as G_mks
 import Disks as D
 import Merc as M
 import random as R
@@ -48,11 +48,12 @@ class Obj(object):
 		self.vel = [self.vx, self.vy, self.vz]
 
 ###############################################################################
-def GetObjList(rtr = 5., sigC = 10., rh = 10., dm = 1.e-7, alpha = 1.5):
+def GetObjList(rtr = 5., sigC = 10., rh = 10., m = [mMoon/mSun,mMars/mSun], 
+	f= [0.5, 0.5], alpha = 1.5):
 	'''Generate list of objects based on the Disks semi-analytic model'''
 
 	disk = D.Disk(r_out=rtr, alpha=alpha, sigC=sigC, rh=rh)
-	disk.DebrisGenM(dm)
+	disk.DebrisGenM(m,f)
 	a, mass = disk.debris.ListParams()
 
 #	digits = str(int(np.floor(np.log10(len(a))+1)))
