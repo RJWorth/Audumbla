@@ -424,4 +424,20 @@ def El2X(el, mass):
 	return(x,y,z,u,v,w)
 	
 ###########################################################################
+def WriteRuntime(t1,t2):
+	'''Return the sim runtime formatted readably'''
+
+	secs = t2-t1
+	mins = secs/60.
+	hrs  = mins/60.
+
+	if (hrs <= 1.):
+		if (mins <= 1.):
+			return( '--------- runtime = {0} {1} ---------'.format(secs,'sec') )
+		else:					
+			return( '--------- runtime = {0:.2f} {1} ---------'.format(mins,'min') )
+	else:
+		return( '--------- runtime = {0:.2f} {1} ---------'.format(hrs, 'hrs') )
+
+###########################################################################
 
