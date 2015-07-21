@@ -152,7 +152,8 @@ def WriteParamInFile(loc = 'Merc95/In/', f = 'in', alg='hybrid',
  < not used at present >
  Hybrid integrator changeover (Hill radii) = {NrH}
  number of timesteps between data dumps = {dtDump}
- number of timesteps between periodic effects = {dtPer}'''.format(
+ number of timesteps between periodic effects = {dtPer}
+'''.format(
 	alg=alg, ti=ti, tf=tf, tOut=tOut, dt=dt, acc=acc,
 	CEstop=CEstop, CE=CE, CEfrag=CEfrag, tUnit=tUnit, tRel=tRel,prec=prec,
 	rel=rel, user=user,
