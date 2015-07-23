@@ -60,11 +60,17 @@ def GetObjList(rtr = 5., sigC = 10., rh = 10., m = [mMoon/mSun,mMars/mSun],
 	digits = str(len(str(len(a))))
 	fmt = 'P{0:0'+digits+'}'
 
+### List of planetesimals on circular co-planar orbits with random phases
 	objlist = []
 	for i in range(len(a)):
 		objlist.append( M.Obj(name=fmt.format(i), mass=mass[i], density=3.,
 		a=a[i], 
 		g=R.uniform(0.,360.), n=R.uniform(0.,360.), m=R.uniform(0.,360.)) )
+
+	### Add binary star (AlCenA)
+	objlist.append( M.Obj(name='AlCenA', mass=1.105, density=1.5,
+	a=23.7,               e=0.5179,             i=R.uniform(0.,180.), 
+	g=R.uniform(0.,360.), n=R.uniform(0.,360.), m=R.uniform(0.,360.)) )
 
 	return objlist
 
