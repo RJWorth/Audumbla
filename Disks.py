@@ -2,22 +2,106 @@
 
 import random, copy
 import Disks as d
+import Merc as M
 import numpy as np
 from numpy import pi,sqrt
 from cgs_constants import mSun,mEarth,mMoon,mMars,AU,G
 import multiprocessing as mp
+import matplotlib.pyplot as plt
+import subprocess
 tol = 1e-6	# tolerance in probability summing to 1.
 
 ###############################################################################
-def Test():
-	print('success')
+def Sep2D(planets):
+	'''Takes a list of N DiskObjs. Returns an NxN array of the separation
+	of each pair of objects, in mutual hill radii.'''
+
+	N = len(planets)
+	sep = np.zeros((N,N))
+
+	for i in range(N):
+		for j in range(N):
+			if i != j:
+				sep[i,j] = planets[i].sep(planets[j])
+	return(sep)
+
+###############################################################################
+def A2D(planets):
+	'''Takes a list of N DiskObjs. Returns an NxN array of the mass-weighted
+	mean a of each pair of objects.'''
+
+	N = len(planets)
+	a2d = np.zeros((N,N))
+
+
+	for i in range(N):
+		for j in range(N):
+			if i != j:
+				a1, a2 = planets[i].a, planets[j].a
+				m1, m2 = planets[j].m, planets[j].m
+				a2d[i,j] = (a1*m1 + a2*m2)/(m1 + m2)
+			else:
+				a2d[i,j] = planets[i].a				
+
+	return a2d
+
+###############################################################################
+def Prob2D_new(sep,a2):
+	'''Takes a list of N DiskObjs. Returns an NxN array of the probabilities
+	of each pair of objects colliding (unnormalized).'''
+
+	assert sep.shape == a2.shape, "Prob2d error: Array shapes don't match"
+	prob = np.zeros_like(a2)
+	N1 = a2.shape[0]
+	N2 = a2.shape[1]
+
+	for i in range(N1):
+		for j in range(N2):
+			if i != j:
+				prob[i,j] = 1./(sep[i,j]*a2[i,j])
+
+	return(prob)
+
+###############################################################################
+def Prob2D(planets):
+	'''Takes a list of N DiskObjs. Returns an NxN array of the probabilities
+	of each pair of objects colliding (unnormalized).'''
+
+	N = len(planets)
+	prob = np.zeros((N,N))
+
+	for i in range(N):
+		for j in range(N):
+			if i != j:
+				prob[i,j] = planets[i].prob(planets[j])
+
+	return(prob)
+
+###############################################################################
+def Roll(prob):
+	'''Takes an NxN array of probabilities and a random float 
+	between 0 and 1. Walks through the array in rows, subtracting
+	each probability, until crossing zero, then returns those indices.'''
+
+	x = random.uniform(0.,np.sum(prob))
+
+	Ni,Nj = prob.shape
+	assert Ni==Nj, 'array not square!'
+	N = Ni
+
+	# Step through array until reaching the random value
+	for ind in range(N**2):
+		i = (ind-ind%N)/N
+		j = ind%N
+		x = x-prob[ i, j]
+		if x < 0.:
+			return 	(ind-ind%N)/N, ind%N 
+	raise ValueError, "Error in Roll: no match"
 
 ###############################################################################
 def AnnulusBody(disk, r0,r1):
 	"""Return a body with the aggregate properties of a disk annulus."""
 
-#		r0 = self.r_i + da*i	# inner edge of annulus
-#		r1 = min(r0 + da,self.r_out)			# outer edge of annulus
 	Annulus       = copy.deepcopy(disk)
 	Annulus.r_i   = r0
 	Annulus.r_out = r1
@@ -93,6 +177,184 @@ def PickFromList(x,prob):
 
 	return value
 
+############################################################################
+def Comparison(WhichDir):
+	'''Organize data from MERCURY run into list of interactions to 
+	compare with my algorithm's output.'''
+
+	CorS = [0,0]
+
+	### Get initial objects
+	objs = M.ReadInObjList(WhichDir+'/In/','big.in')
+	namelist = [objs[0].name]
+	a_thistime, m_thistime = [objs[0].a()], [objs[0].mass]
+	for o in objs[1:]:
+		namelist.append(o.name)
+		a_thistime.append(o.a())
+		m_thistime.append(o.mass)
+#		for n in namelist:
+#			a, m, tf = M.ReadAeiLine(WhichDir,n,tf)
+	a_list = [a_thistime]
+	m_list = [m_thistime]
+	da = [0.]
+	mnsep = [np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)])]
+	mdsep = [np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)])]
+
+	### Get interaction lists
+	name, dest, time = M.ReadInfo(WhichDir)
+#	namelist.remove(name[0])	# remove first object
+
+	### Step through collisions in chronological order
+#	for i, t in enumerate(time[1:]):
+	for i, t in enumerate(time):
+		a_other = 'reset'
+		if dest[i] in ['ejected','Center']:
+			CorS[1] =+ 1
+			if dest[i] == 'ejected':
+				a_other = 100.
+			else:
+				a_other = 0.
+		else:
+			CorS[0] =+ 1
+	### Get last timestep of destroyed object
+		a, m, tf = M.ReadAeiLine(WhichDir,name[i],t,iscoll=True)
+		a_thistime, m_thistime = [], []
+		namelist.remove(name[i])
+	### Get all other objects at the next timestep and record their positions
+		for n in namelist:
+			a, m, dummy = M.ReadAeiLine(WhichDir,n,tf)
+			if not a  == None:
+				a_thistime.append(a)
+				m_thistime.append(m)
+			if n == dest[i]:
+				a_other = a
+		assert a_other != 'reset', 'a_other not matched!'
+	### Put a, m into lists like IceCow
+		a_thistime.sort
+		m_thistime.sort
+		a_list.append(a_thistime)
+		m_list.append(m_thistime)
+		da.append(abs(a-a_other))
+		mnsep.append(np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
+		mdsep.append(np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
+	da.append(0.)
+
+	print(namelist)
+	### Get final masses and positions
+	line = subprocess.check_output(['tail', '-1', WhichDir+'/Aei/'+namelist[0]+'.aei'])
+	tMax = float(line.split()[0])
+	print(tMax)
+	a_thistime, m_thistime = [], []
+	for n in namelist:
+		a, m, tf = M.ReadAeiLine(WhichDir,n,tMax)
+		a_thistime.append(a)
+		m_thistime.append(m)
+	a_thistime.sort
+	m_thistime.sort
+	a_list.append(a_thistime)
+	m_list.append(m_thistime)
+	mnsep.append(np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
+	mdsep.append(np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
+		
+	# insert 0 and tMax at beginning and end of timeline
+	tlist = np.insert(np.append(time,tMax),0,0.)
+
+	return a_list, m_list, tlist, da, CorS, mnsep, mdsep
+
+###############################################################################
+def PlotDiskMerge(a, tlist='default',da='default',mnsep='default',mdsep='default',
+		fname='IceCow_000',ftype='png',ylim='default'):
+	'''Plot the merge history of a list of semimajor axes at each step'''
+
+	### Plot
+	for i in range(len(a)):
+		# x values
+		if tlist == 'default':
+			x = [   i    for n in range(len(a[i]))]
+			xlab = '# of Collisions'
+		else:
+			x = [tlist[i] for n in range(len(a[i]))]
+			xlab = 'Time'
+		plt.figure(1)
+		if tlist != 'default':
+			plt.subplot(221)
+		plt.plot(x, a[i], 'ro',ms=1.)
+
+	x1,x2,y1,y2 = plt.axis()
+	if not ylim == 'default':
+		plt.ylim(ylim)
+		plt.xscale('log')
+	plt.xlabel(xlab)
+	plt.ylabel('Semimajor Axis (AU)')
+	plt.title('Planetesimal Merging Heuristic')
+
+	### If time provided, make t vs. n plot
+	if tlist != 'default':
+#		plt.subplot(222)
+#		plt.plot(tlist, range(len(a)), 'bo')
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('# of Collisions')
+#		plt.ylabel('Time')
+#		plt.title('')
+		
+#		plt.subplot(223)
+		dt = np.array([tlist[i+1]-tlist[i] for i in range(len(tlist)-1)])	# one shorter
+#		da2 = np.array(da[1:])
+#		clip_dt = np.array([(i < 5e6) for i in dt])
+#		clip_da = np.array([(i < 90) for i in da2])
+#		clip = np.array([ clip_dt[i] & clip_da[i] for i in range(len(dt))])
+#		plt.plot(da2[clip],dt[clip],'ro')
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('Object Separation')
+#		plt.ylabel('Time to Collision')
+#		plt.title('')
+
+#		plt.subplot(224)
+#		da_sum = [np.sum(da[:i]) for i in range(len(da))]
+#		plt.plot(da_sum,tlist)
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('Cumulative Separations')
+#		plt.ylabel('Time')
+#		plt.title('')
+
+		plt.subplot(222)
+		plt.plot(tlist, mdsep, 'bo',
+				 tlist, mnsep, 'ro')
+		plt.xscale('log')
+		plt.yscale('log')
+		plt.xlabel('Time')
+		plt.ylabel('Average Separation')
+		plt.title('')
+
+		plt.subplot(223)
+		plt.plot(dt, mnsep[1:], 'ro')
+		plt.xscale('log')
+		plt.yscale('log')
+		plt.xlabel('dt')
+		plt.ylabel('Mean Separation')
+		plt.title('')
+
+
+		plt.subplot(224)
+		plt.plot(dt, mdsep[1:], 'bo')
+		plt.xscale('log')
+		plt.yscale('log')
+		plt.xlabel('dt')
+		plt.ylabel('Median Separation')
+		plt.title('')
+
+
+	### Save
+	plt.savefig(fname+'.'+ftype)
+	plt.clf()
+
+###############################################################################
+###############################################################################
+#------------------------------- Objects --------------------------------------
+###############################################################################
 ###############################################################################
 class Body(object):
 	"""An orbiting body in a debris disk."""
@@ -121,26 +383,8 @@ class Body(object):
 #-----------------------------------------------------------------------------#
 	def P(self):
 		"""Orbital period in days"""
-		P = 2*pi * sqrt( (self.a*AU)**3. / (G*self.M*m) )/(24*3600.)
+		P = 2*pi * sqrt( (self.a*AU)**3. / (G*(self.M+self.m)*mSun) )/(24*3600.)
 		return P
-
-#-----------------------------------------------------------------------------#
-#	def KE(self):
-#		"""Kinetic energy of Body"""
-#		KE = 0.
-#		return KE		
-
-#-----------------------------------------------------------------------------#
-#	def PE(self):
-#		"""Potential energy of Body"""
-##		PE = -self.mu()/self.r
-#		return PE		
-
-#-----------------------------------------------------------------------------#
-#	def E(self):
-#		"""Total energy of Body"""
-#		E = self.PE() + self.KE()
-#		return E		
 
 #-----------------------------------------------------------------------------#
 	def RH(self):
@@ -155,6 +399,34 @@ class Body(object):
 		assert (self.M == other.M), 'Bodies do not have same central object'
 		RH2 = ((self.m+other.m)/(3.*self.M))**(1./3.) * ((self.a+other.a)/2.)
 		return RH2		
+
+#-----------------------------------------------------------------------------#
+	def sep(self, other):
+		"""Separation of two Bodies, in mutual Hill radii"""
+
+		da = self.a-other.a
+		rh2 = ((self.m+other.m)/(3.*self.M))**(1./3.) * ((self.a+other.a)/2.)
+		if da>0.:
+			sep =  da/rh2
+		else:
+			sep = -da/rh2
+
+		return sep
+
+#-----------------------------------------------------------------------------#
+	def prob(self, other):
+		"""Probability of collision of two Bodies, defined as inverse
+		of their separation in mutual Hill radii"""
+
+		da = self.a-other.a
+		rh2 = ((self.m+other.m)/(3.*self.M))**(1./3.) * ((self.a+other.a)/2.)
+		if da>0.:
+			prob =  rh2/da
+		else:
+			prob = -rh2/da
+
+		return prob
+
 #-----------------------------------------------------------------------------#
 	def IsClose(self,other,rh=10.):
 		'''Check if two adjacent objects are within their mutual Hill radius
@@ -180,19 +452,8 @@ class DebrisDisk(list):
 
 	def __init__(self, data, rh=10.):
 		list.__init__(self, data)
-		self.rh = rh
+		self.rh = rh	# # of hill radii at which objects won't collide
 	
-#	def times_two(self):
-#		return self * 2 
-#-----------------------------------------------------------------------------#
-#	def __init__(self):
-#		"""Instantialize object of DebrisDisk class."""
-#		list.__init__(self)
-		
-#-----------------------------------------------------------------------------#
-	def Test(self):
-		print('success')
-
 #-----------------------------------------------------------------------------#
 	def ListParams(self):
 		'''Return list of masses/positions of debris objects.'''
@@ -200,6 +461,17 @@ class DebrisDisk(list):
 		mlist = np.array([i.m for i in self])
 
 		return alist,mlist
+
+#-----------------------------------------------------------------------------#
+	def SortObjs(self):
+		'''Return list reordered from lowest to highest a.'''
+
+		alist = self.ListParams()[0]
+		order = np.argsort(alist)
+
+		newlist = d.DebrisDisk([self[i] for i in order])
+
+		return(newlist)
 
 ##-----------------------------------------------------------------------------#
 #	def IsClose(self,i1,out=True):
@@ -220,7 +492,6 @@ class DebrisDisk(list):
 #			coll = False
 
 #		return coll
-
 #-----------------------------------------------------------------------------#
 	def Merge(self,i,out=True, EjProb=0.,CorS=[0,0]):
 		'''Merge debris object self.debris[i] with the outward or inward object'''
@@ -258,14 +529,173 @@ class DebrisDisk(list):
 
 		return deblist, CorS
 
+
+#-----------------------------------------------------------------------------#
+	def MergeAny(self, i1, i2, EjProb=0.,CorS=[0,0]):
+		'''Merge debris object self.debris[i] with any other object'''
+
+		deblist = copy.deepcopy(self)
+		newobj  = copy.deepcopy(self[i1])
+		oldobj1 = deblist[i1]
+		oldobj2 = deblist[i2]
+
+		### Roll to see if objects merge or scatter
+		if (random.random() >= EjProb):	# if merging
+			newobj.m =  oldobj1.m + oldobj2.m
+			newobj.a = np.average([oldobj1.a,oldobj2.a],
+						weights = [oldobj1.m,oldobj2.m])
+
+			deblist.remove(oldobj1)
+			deblist.remove(oldobj2)
+			deblist.insert(i1,newobj)
+			CorS[0] = CorS[0]+1
+		else:							# if scattering, eject the smaller one
+			if (oldobj1.m < oldobj2.m):
+				deblist.remove(oldobj1)
+			else:
+				deblist.remove(oldobj2)	
+			CorS[1] = CorS[1]+1
+
+		assert(len(deblist) == len(self)-1)
+
+	### Put the objects in order by a
+		deblist = deblist.SortObjs()
+
+		return deblist, CorS
+
+#-----------------------------------------------------------------------------#
+	def IceCow(self, EjProb=0.,CorS=[0,0], nRh=10.,drift=[0.,0.],vers='new'):
+		'''Collide objects in the disk based on probability for each pair, 
+		based on how close they are. Continue until all are isolated, then
+		output the resulting list of Bodies to Disk.planets. Return lists
+		of each a and e over the evolution, and list with counts of 
+		collisions vs. scatters.'''
+
+		planets = copy.deepcopy(self)
+		param_a = [planets.ListParams()[0]]
+		param_m = [planets.ListParams()[1]]
+		counter = 0
+		N = len(planets)
+		ind = range(N-1)
+		CorS = [0,0]
+		t = [0.]
+
+		# 2D array of probabilities ( = RH2/da)
+		if vers=='old':
+			prob = d.Prob2D(planets)
+			minsep = 1./np.max(prob)
+		elif vers=='new':
+			sep2d = d.Sep2D(planets)
+			a2d   = d.A2D(planets)
+			prob  = d.Prob2D_new(sep2d, a2d)
+			flat  = np.sort(sep2d.flatten())
+			nzeros = len(flat[flat == 0.])
+			print(flat[(nzeros-1):(nzeros+4)])
+			minsep = flat[nzeros]
+
+		print(minsep)
+		# merge closest objects until all are spaced by nRh*RH2
+		while (minsep <= nRh):
+			print(t)
+			i,j = d.Roll(prob)
+			# merge i and j
+			planets, CorS = planets.MergeAny(i,j, EjProb=EjProb,CorS=CorS)
+			# add random drift in positions
+			if drift != [0.,0.]:
+				for k in range(len(planets)):
+					planets[k].a = planets[k].a + random.uniform(
+													-drift[0]/planets[k].m,
+													 drift[1]/planets[k].m)
+			# add a/e to record
+			param_a.append(planets.ListParams()[0])
+			param_m.append(planets.ListParams()[1])
+			# advance timestep by minimum separation
+			t.append(t[-1] + minsep)
+			# recalculateprob
+			print('{0: 4} t={1: .1e},{5: 3} remaining, ij=[{2: 4} {3: 4}], P={4: .1e}, minsep={6: .1e}'.format(
+					counter, t[-1], i,j, prob[i,j], len(planets), minsep ) )
+			if vers=='old':
+				prob = d.Prob2D(planets)
+				minsep = 1./np.max(prob)
+			elif vers=='new':
+				sep2d = d.Sep2D(planets)
+				a2d   = d.A2D(planets)
+				preva2d = a2d
+				prob  = d.Prob2D_new(sep2d, a2d)
+				flat  = np.sort(sep2d.flatten())
+				nzeros = len(flat[flat == 0.])
+				print(flat[(nzeros-1):(nzeros+4)])
+				minsep = flat[nzeros]
+
+				index = min(i,j)
+				print(np.array(preva2d[:index,:index]) == np.array(a2d[:index,:index]))
+				print(np.array(preva2d[:index,:index]))
+				print(np.array(a2d[:index,:index]))
+			counter += 1
+
+		return planets, param_a, param_m, t, CorS
+	
+
+#-----------------------------------------------------------------------------#
+	def PltFormTimed(self, EjProb=0.,CorS=[0,0], nRh=10.):
+		'''Collide objects in the disk based on a 'time' parameter 
+		based on how close they are. Continue until all are isolated, then
+		output the resulting list of Bodies to Disk.planets.'''
+
+		planets = copy.deepcopy(self)
+		param_a = [planets.ListParams()[0]]
+		param_m = [planets.ListParams()[1]]
+		counter = 0
+		N = len(planets)
+		ind = range(N-1)
+		CorS = [0,0]
+
+		# 'merge time' (proportional to distance in rHs)
+#		rh = np.array([planets[j].RH2(planets[j+1]) for j in range(len(planets)-1)])
+#		da = np.array([abs(planets[j].a-planets[j+1].a) for j in range(len(planets)-1)])
+		t = np.array([planets[j].sep(planets[j+1]) for j in range(len(planets)-1)])
+		# merge closest objects until all are spaced by nRh*RH2
+		now=0.
+		while (min(t)-now <= nRh):
+			now = min(t)
+			i = np.where(t==min(t))[0][0]
+			# merge i and i+1
+			planets, CorS = planets.Merge(i, EjProb=EjProb,CorS=CorS)
+			param_a.append(planets.ListParams()[0])
+			param_m.append(planets.ListParams()[1])
+			print('counter={0: 4} index={1: 4} coll={2: 4} sctr={3: 4} bodies remaining={4: 3}'.format(
+							counter, i,CorS[0],CorS[1],len(planets) ) )
+			# recalculate t
+#			rh = np.array([planets[j].RH2(planets[j+1]) for j in range(len(planets)-1)])
+#			da = np.array([abs(planets[j].a-planets[j+1].a) for j in range(len(planets)-1)])
+###			t = [planets[j].sep(planets[j+1]) for j in range(len(planets)-1)]
+			mask = np.ones(len(t), dtype=bool)
+			if (i < len(t)-1):
+				mask[i+1] = False
+				t2 = t[mask]
+				t2[i-1] = now + planets[i-1].sep(planets[i  ])
+				t2[i]   = now + planets[i  ].sep(planets[i+1])
+			else:
+				mask[i] = False
+				t2 = t[mask]
+				t2[i-1] = now + planets[i-1].sep(planets[i  ])
+#				t2[i]   = now + planets[i  ].sep(planets[i+1])
+	
+			t = t2
+			print(i,len(t))
+
+			counter += 1
+
+		return planets, param_a, param_m, CorS
+	
+
 #-----------------------------------------------------------------------------#
 	def PltFormRand(self, EjProb=0.):
 		'''Collide random objects in the disk until they are all isolated, then
 		output the resulting list of Bodies to Disk.planets.'''
 
-
-		planets = [copy.deepcopy(self)]
 		counter = 0
+		planets = [copy.deepcopy(self)]
 		N = len(planets[0])
 		ind = range(N-1)
 		CorS = [0,0]
@@ -431,9 +861,6 @@ class Disk(object):
 			mDust2 = 0.
 	
 		self.mDust = mDust1+mDust2
-#-----------------------------------------------------------------------------#
-	def Test(self):
-		print('success')
 
 #-----------------------------------------------------------------------------#
 	def DebrisGenM(self,m=np.array([mMoon,mMars])/mSun,f=[.5,.5],override=False):
@@ -531,4 +958,6 @@ class Disk(object):
 		print 'alpha  = {0}'.format(self.alpha)
 		print 'sigma coefficient = {0}'.format(self.sigC)
 
+
+###############################################################################
 
