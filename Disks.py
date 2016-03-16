@@ -182,6 +182,7 @@ def Comparison(WhichDir):
 	'''Organize data from MERCURY run into list of interactions to 
 	compare with my algorithm's output.'''
 
+	Mcent = M.ReadMCent(WhichDir+'/')
 	CorS = [0,0]
 
 	### Get initial objects
@@ -191,12 +192,18 @@ def Comparison(WhichDir):
 	for o in objs[1:]:
 		namelist.append(o.name)
 		a_thistime.append(o.a())
+		e_thistime.append(o.a())
+		i_thistime.append(o.mass)
 		m_thistime.append(o.mass)
 #		for n in namelist:
 #			a, m, tf = M.ReadAeiLine(WhichDir,n,tf)
 	a_list = [a_thistime]
+	e_list = [a_thistime]
+	i_list = [m_thistime]
 	m_list = [m_thistime]
-	da = [0.]
+	da = np.array([0.])
+	Rh = np.array([0.])
+	acoll = np.array([0.])
 	mnsep = [np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)])]
 	mdsep = [np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)])]
 
@@ -218,6 +225,7 @@ def Comparison(WhichDir):
 			CorS[0] =+ 1
 	### Get last timestep of destroyed object
 		a, m, tf = M.ReadAeiLine(WhichDir,name[i],t,iscoll=True)
+		a_self, e_self, i_self, m_self = a, e, i, m
 		a_thistime, m_thistime = [], []
 		namelist.remove(name[i])
 	### Get all other objects at the next timestep and record their positions
@@ -228,16 +236,22 @@ def Comparison(WhichDir):
 				m_thistime.append(m)
 			if n == dest[i]:
 				a_other = a
+				m_other = m
 		assert a_other != 'reset', 'a_other not matched!'
 	### Put a, m into lists like IceCow
 		a_thistime.sort
 		m_thistime.sort
 		a_list.append(a_thistime)
 		m_list.append(m_thistime)
-		da.append(abs(a-a_other))
+		acoll = np.append(acoll,np.mean([a_self,a_other]))
+		da = np.append(da,a_self-a_other)
+		rh2 = ((m_self+m_other)/(3.*Mcent))**(1./3.) * ((a_self+a_other)/2.)
+		Rh = np.append(Rh, rh2)
 		mnsep.append(np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
 		mdsep.append(np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
-	da.append(0.)
+	acoll = np.append(acoll, 0.)
+	da = np.append(da, 0.)
+	Rh = np.append(Rh, 0.)
 
 	print(namelist)
 	### Get final masses and positions
@@ -259,37 +273,99 @@ def Comparison(WhichDir):
 	# insert 0 and tMax at beginning and end of timeline
 	tlist = np.insert(np.append(time,tMax),0,0.)
 
-	return a_list, m_list, tlist, da, CorS, mnsep, mdsep
+	return np.array(a_list), np.array(m_list), tlist, acoll, da, Rh, CorS, mnsep, mdsep
 
 ###############################################################################
-def PlotDiskMerge(a, tlist='default',da='default',mnsep='default',mdsep='default',
+def PlotDiskMerge(a, m, tlist='default',
+		acoll='default',da='default',Rh='default',
+		mnsep='default',mdsep='default',
 		fname='IceCow_000',ftype='png',ylim='default'):
 	'''Plot the merge history of a list of semimajor axes at each step'''
 
-	### Plot
+	plt.close('all')
+
+	### Set up plot objects
+	if tlist == 'default':
+		f, ax1 = plt.subplots(1)
+	else:
+		f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+
+	# Make x values array and plot each timestep
+	x = np.array(len(a))
 	for i in range(len(a)):
-		# x values
 		if tlist == 'default':
-			x = [   i    for n in range(len(a[i]))]
+			x[i] = [   i    for n in range(len(a[i]))]
 			xlab = '# of Collisions'
 		else:
-			x = [tlist[i] for n in range(len(a[i]))]
+			x[i] = [tlist[i] for n in range(len(a[i]))]
 			xlab = 'Time'
-		plt.figure(1)
-		if tlist != 'default':
-			plt.subplot(221)
-		plt.plot(x, a[i], 'ro',ms=1.)
+#		ax1.scatter(x, a[i], s=1.,c=np.log(m[i]), lw=0.)
+	ax1.scatter(x, a, s=1.,c=np.log(m[i]), lw=0.)
 
-	x1,x2,y1,y2 = plt.axis()
+	(x1,x2),(y1,y2) = ax1.get_xlim(), ax1.get_ylim()
+#	x1=0.1
 	if not ylim == 'default':
-		plt.ylim(ylim)
-		plt.xscale('log')
-	plt.xlabel(xlab)
-	plt.ylabel('Semimajor Axis (AU)')
-	plt.title('Planetesimal Merging Heuristic')
+		ax1.set_ylim(ylim)
+		ax1.set_xscale('log')
+	ax1.set_xlabel(xlab)
+	ax1.set_ylabel('Semimajor Axis (AU)')
+#	plt.title('Planetesimal Merging Heuristic')
 
 	### If time provided, make t vs. n plot
 	if tlist != 'default':
+		dt = np.array([tlist[i+1]-tlist[i] for i in range(len(tlist)-1)])
+		dRh = np.array(da)/np.array(Rh)
+#		clip_dt = np.array([(i < 5e6) for i in dt])
+#		clip_da = np.array([(i < 90) for i in da])
+#		clip = np.array([ clip_dt[i] & clip_da[i] for i in range(len(dt))])
+		da_sum = [np.sum(da[:i]) for i in range(len(da))]
+
+		da2, dt2 = da[1:(len(da)-1)], dt[:(len(dt)-1)]
+		ac2, Rh2, dRh2 = acoll[1:(len(a)-1)], Rh[1:(len(Rh)-1)], dRh[1:(len(dRh)-1)]
+
+		test1,test2,test3 = np.ones(len(ac2)),np.ones(len(ac2)),np.ones(len(ac2))
+
+		ax2.set_xscale('log')
+		ax2.set_yscale('log')
+		ax2.scatter(da2,dt2, c=np.log(ac2))
+		ax2.set_xlabel('da')
+		ax2.set_ylabel('dt')
+
+		ax3.set_xscale('log')
+		ax3.set_yscale('log')
+		ax3.scatter(Rh2,dt2, c=np.log(ac2))
+		ax3.set_xlabel('Rh')
+		ax3.set_ylabel('dt')
+
+		ax4.set_xscale('log')
+		ax4.set_yscale('log')
+		ax4.scatter(dRh2,dt2, c=np.log(ac2))
+		ax4.set_xlabel('dRh')
+		ax4.set_ylabel('dt')
+
+#		plt.subplot(222)
+#		plt.xscale('log')
+#		plt.yscale('log')
+##		plt.plot(da2,dt2,'ro')
+#		plt.scatter(da2,dt2, c=test3)
+#		plt.xlabel('da')
+#		plt.ylabel('dt')
+
+#		plt.subplot(223)
+#		plt.plot(da2,dt2,'ro')
+##		plt.scatter(Rh[1:(len(Rh)-1)],dt[:(len(dt)-1)], c=a[1:(len(da)-1)])
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('Rh')
+#		plt.ylabel('dt')
+
+#		plt.subplot(224)
+#		plt.scatter(dRh[1:(len(dRh)-1)],dt[:(len(dt)-1)], c=a[1:(len(da)-1)])
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('dRh')
+#		plt.ylabel('dt')
+
 #		plt.subplot(222)
 #		plt.plot(tlist, range(len(a)), 'bo')
 #		plt.xscale('log')
@@ -297,13 +373,8 @@ def PlotDiskMerge(a, tlist='default',da='default',mnsep='default',mdsep='default
 #		plt.xlabel('# of Collisions')
 #		plt.ylabel('Time')
 #		plt.title('')
-		
+#		
 #		plt.subplot(223)
-		dt = np.array([tlist[i+1]-tlist[i] for i in range(len(tlist)-1)])	# one shorter
-#		da2 = np.array(da[1:])
-#		clip_dt = np.array([(i < 5e6) for i in dt])
-#		clip_da = np.array([(i < 90) for i in da2])
-#		clip = np.array([ clip_dt[i] & clip_da[i] for i in range(len(dt))])
 #		plt.plot(da2[clip],dt[clip],'ro')
 #		plt.xscale('log')
 #		plt.yscale('log')
@@ -312,7 +383,6 @@ def PlotDiskMerge(a, tlist='default',da='default',mnsep='default',mdsep='default
 #		plt.title('')
 
 #		plt.subplot(224)
-#		da_sum = [np.sum(da[:i]) for i in range(len(da))]
 #		plt.plot(da_sum,tlist)
 #		plt.xscale('log')
 #		plt.yscale('log')
@@ -320,36 +390,37 @@ def PlotDiskMerge(a, tlist='default',da='default',mnsep='default',mdsep='default
 #		plt.ylabel('Time')
 #		plt.title('')
 
-		plt.subplot(222)
-		plt.plot(tlist, mdsep, 'bo',
-				 tlist, mnsep, 'ro')
-		plt.xscale('log')
-		plt.yscale('log')
-		plt.xlabel('Time')
-		plt.ylabel('Average Separation')
-		plt.title('')
+#		plt.subplot(222)
+#		plt.plot(tlist, mdsep, 'bo',
+#				 tlist, mnsep, 'ro')
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('Time')
+#		plt.ylabel('Average Separation')
+#		plt.title('')
 
-		plt.subplot(223)
-		plt.plot(dt, mnsep[1:], 'ro')
-		plt.xscale('log')
-		plt.yscale('log')
-		plt.xlabel('dt')
-		plt.ylabel('Mean Separation')
-		plt.title('')
+#		plt.subplot(223)
+#		plt.plot(dt, mnsep[1:], 'ro')
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('dt')
+#		plt.ylabel('Mean Separation')
+#		plt.title('')
 
 
-		plt.subplot(224)
-		plt.plot(dt, mdsep[1:], 'bo')
-		plt.xscale('log')
-		plt.yscale('log')
-		plt.xlabel('dt')
-		plt.ylabel('Median Separation')
-		plt.title('')
+#		plt.subplot(224)
+#		plt.plot(dt, mdsep[1:], 'bo')
+#		plt.xscale('log')
+#		plt.yscale('log')
+#		plt.xlabel('dt')
+#		plt.ylabel('Median Separation')
+#		plt.title('')
 
 
 	### Save
 	plt.savefig(fname+'.'+ftype)
 	plt.clf()
+	plt.close(f)
 
 ###############################################################################
 ###############################################################################
