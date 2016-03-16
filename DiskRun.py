@@ -1,5 +1,6 @@
 
 import Disks as d
+import Merc as M
 import numpy as np
 import matplotlib.pyplot as plt
 #from matplotlib.backends.backend_pdf import PdfPages
@@ -8,14 +9,14 @@ import cProfile
 import re
 import pstats
 #-----------------------------------------------------------------------------#
-rtr = 1.0    # truncation radius
-s   = 3.    # coefficient of surface density (sigma = MMSN*s)
-rh  =10.    # number of hill radii counting as interaction
+rtr = 1.0     # truncation radius
+s   = 3.      # coefficient of surface density (sigma = MMSN*s)
+rh  =10.      # number of hill radii counting as interaction
 m = [mMoon/mSun,mMars/mSun] # possible planetesimal masses
-f = [0.5, 0.5]    # fraction of total mass in each size
-a   =1.5    # alpha, slope of surface density profile
-ej  = .2    # fraction of interactions that should lead to ejection rather than collision
-dr  = [0.,0.]	#[4.e-10,5.e-10]  # a drifts randomly by up to this much (in AU) each step, in/out respectively
+f = [0.5, 0.5] # fraction of total mass in each size
+a   =1.5      # alpha, slope of surface density profile
+ej  = .2      # fraction of interactions that should lead to ejection rather than collision
+dr  = [0.,0.] #[4.e-10,5.e-10]  # a drifts randomly by up to this much (in AU) each step, in/out respectively
 #-----------------------------------------------------------------------------#
 reload(d)
 disk = d.Disk(r_out=rtr, alpha=a, sigC=s, rh=rh)
@@ -24,12 +25,11 @@ pl_n, a_n, m_n, t, CorS = disk.debris.IceCow(EjProb=ej,nRh=rh,drift=dr,vers="new
 d.PlotDiskMerge(a_n,fname='newprob_n')
 d.PlotDiskMerge(a_n,fname='newprob_t',t=t)
 
-
 cProfile.run('pl_n, a_n, m_n, t, CorS = disk.debris.IceCow(EjProb=ej,nrh=rh,drift=dr,vers="new")','new')
 p_new = pstats.Stats('new')
 d.PlotDiskMerge(a_n,fname='testnew')
 
-cProfile.run('pl_o, a_o, m_o, t, CorS = disk.debris.IceCow(EjProb=ej,nrh=rh,drift=dr,vers="old")','old')
+cProfile.run('pl_o, a_o, m_o, t, CorS = disk.debris.IceCow(EjProb=ej, nrh=rh, drift=dr, vers="old")','old')
 p_old = pstats.Stats('old')
 d.PlotDiskMerge(a_o,fname='testold')
 
@@ -40,11 +40,12 @@ planets, a_icecow, m_icecow, CorS_icecow = disk.debris.IceCow(EjProb=ej,nrh=rh,d
 d.PlotDiskMerge(a_icecow,ylim=[0.,4.])
 
 ### Read in and plot merge history from MERCURY sim
-a_merc, m_merc, t_merc, da, CorS_merc, mnsep, mdsep = d.Comparison('Comparison')
-d.PlotDiskMerge(yparam=a_merc,fname='Merc_n',ylim=[0.,4.])
-d.PlotDiskMerge(a=a_merc,tlist=t_merc,fname='Merc_t',ylim=[0.,4.])
-d.PlotDiskMerge(a=a_merc,tlist=t_merc,da=da,fname='Merc_t',ylim=[0.,4.])
-d.PlotDiskMerge(a=a_merc,tlist=t_merc,da=da,mnsep=mnsep,mdsep=mdsep,fname='Merc_t',ylim=[0.,4.])
+a_merc, m_merc, t_merc, acoll, da, Rh, CorS_merc, mnsep, mdsep = d.Comparison('Comparison')
+d.PlotDiskMerge(a=a_merc,m=m_merc,fname='Merc_n',ylim=[0.,4.])
+d.PlotDiskMerge(a=a_merc,m=m_merc,tlist=t_merc,fname='Merc_t',ylim=[0.,4.])
+d.PlotDiskMerge(a=a_merc,m=m_merc,tlist=t_merc,da=da,Rh=Rh,fname='Merc_t',ylim=[0.,4.])
+d.PlotDiskMerge(a=a_merc,m=m_merc,
+tlist=t_merc,acoll=acoll,da=da,Rh=Rh,mnsep=mnsep,mdsep=mdsep,fname='Merc_t',ylim=[0.,4.])
 
 ### To time and compare modifications:
 #cProfile.run('p, p_a, p_m, CorS = disk.debris.PltFormProb(EjProb=ej,nrh=rh,drift=dr,vers="old")','old')
