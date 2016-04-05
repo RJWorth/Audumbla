@@ -4,12 +4,18 @@ import random, copy
 import Disks as d
 import Merc as M
 import numpy as np
-import pandas as pd
 from numpy import pi,sqrt
 from cgs_constants import mSun,mEarth,mMoon,mMars,AU,G
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import subprocess
+import socket
+machine = socket.gethostname().split('.')[0]
+if (machine in ['hammer','chloe']):
+	print("Warning: {0} doesn't have pandas!".format(machine))
+else:
+	import pandas as pd
+
 tol = 1e-6	# tolerance in probability summing to 1.
 
 ###############################################################################
