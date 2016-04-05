@@ -40,7 +40,9 @@ planets, a_icecow, m_icecow, CorS_icecow = disk.debris.IceCow(EjProb=ej,nrh=rh,d
 d.PlotDiskMerge(a_icecow,ylim=[0.,4.])
 
 ### Read in and plot merge history from MERCURY sim
-a_merc, m_merc, t_merc, acoll, da, Rh, CorS_merc, mnsep, mdsep = d.Comparison('Comparison')
+a_merc, e_merc, i_merc, m_merc, \
+	t_merc, acoll, ecoll, icoll, mcoll, da, Rh, CorS_merc, mnsep, mdsep \
+	= d.Comparison('Comparison')
 d.PlotDiskMerge(a=a_merc,m=m_merc,fname='Merc_n',ylim=[0.,4.])
 d.PlotDiskMerge(a=a_merc,m=m_merc,tlist=t_merc,fname='Merc_t',ylim=[0.,4.])
 d.PlotDiskMerge(a=a_merc,m=m_merc,tlist=t_merc,da=da,Rh=Rh,fname='Merc_t',ylim=[0.,4.])

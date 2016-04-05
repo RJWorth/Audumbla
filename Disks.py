@@ -4,6 +4,7 @@ import random, copy
 import Disks as d
 import Merc as M
 import numpy as np
+import pandas as pd
 from numpy import pi,sqrt
 from cgs_constants import mSun,mEarth,mMoon,mMars,AU,G
 import multiprocessing as mp
@@ -182,98 +183,131 @@ def Comparison(WhichDir):
 	'''Organize data from MERCURY run into list of interactions to 
 	compare with my algorithm's output.'''
 
+	### Get mass of central object
 	Mcent = M.ReadMCent(WhichDir+'/')
-	CorS = [0,0]
+	### Start count for collisions vs. scatters
+	CorS = pd.DataFrame([[0,0]], index=['All'], 
+		columns=['Collisions','Scatters'])
 
 	### Get initial objects
 	objs = M.ReadInObjList(WhichDir+'/In/','big.in')
+	### Start and fill lists for this timestep from the list of Objects
 	namelist = [objs[0].name]
-	a_thistime, m_thistime = [objs[0].a()], [objs[0].mass]
+	a_thistime, e_thistime, i_thistime, m_thistime = \
+		[objs[0].a()], [objs[0].e()], [objs[0].i()], [objs[0].mass]
 	for o in objs[1:]:
 		namelist.append(o.name)
 		a_thistime.append(o.a())
-		e_thistime.append(o.a())
-		i_thistime.append(o.mass)
+		e_thistime.append(o.e())
+		i_thistime.append(o.i())
 		m_thistime.append(o.mass)
-#		for n in namelist:
-#			a, m, tf = M.ReadAeiLine(WhichDir,n,tf)
+
+	### Start lists to add to with each timestep
 	a_list = [a_thistime]
 	e_list = [a_thistime]
 	i_list = [m_thistime]
 	m_list = [m_thistime]
-	da = np.array([0.])
-	Rh = np.array([0.])
-	acoll = np.array([0.])
-	mnsep = [np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)])]
-	mdsep = [np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)])]
+	da = np.array([np.nan])
+	Rh = np.array([np.nan])
+	acoll = np.array([np.nan])
+	ecoll = np.array([[np.nan,np.nan]])
+	icoll = np.array([[np.nan,np.nan]])
+	mcoll = np.array([[np.nan,np.nan]])
+	mnsep = [np.mean([a_thistime[k+1]-a_thistime[k] for k in range(len(a_thistime)-1)])]
+	mdsep = [np.median([a_thistime[k+1]-a_thistime[k] for k in range(len(a_thistime)-1)])]
 
 	### Get interaction lists
 	name, dest, time = M.ReadInfo(WhichDir)
-#	namelist.remove(name[0])	# remove first object
 
 	### Step through collisions in chronological order
-#	for i, t in enumerate(time[1:]):
-	for i, t in enumerate(time):
+	for j, t in enumerate(time):
 		a_other = 'reset'
-		if dest[i] in ['ejected','Center']:
-			CorS[1] =+ 1
-			if dest[i] == 'ejected':
+		if dest[j] in ['ejected','Center']:
+			CorS['Scatters'] =+ 1
+			if dest[j] == 'ejected':
 				a_other = 100.
 			else:
 				a_other = 0.
 		else:
-			CorS[0] =+ 1
+			CorS['Collisions'] =+ 1
 	### Get last timestep of destroyed object
-		a, m, tf = M.ReadAeiLine(WhichDir,name[i],t,iscoll=True)
+		a, e, i, m, tf = M.ReadAeiLine(WhichDir,name[j],t,iscoll=True)
 		a_self, e_self, i_self, m_self = a, e, i, m
-		a_thistime, m_thistime = [], []
-		namelist.remove(name[i])
+		a_thistime, e_thistime, i_thistime, m_thistime = [], [], [], []
+		namelist.remove(name[j])
 	### Get all other objects at the next timestep and record their positions
 		for n in namelist:
-			a, m, dummy = M.ReadAeiLine(WhichDir,n,tf)
+			a, e, i, m, dummy = M.ReadAeiLine(WhichDir,n,tf)
 			if not a  == None:
 				a_thistime.append(a)
+				e_thistime.append(e)
+				i_thistime.append(i)
 				m_thistime.append(m)
-			if n == dest[i]:
+			else:
+				'Object missing: {}'.format(n)
+			if n == dest[j]:
 				a_other = a
+				e_other = e
+				i_other = i
 				m_other = m
 		assert a_other != 'reset', 'a_other not matched!'
-	### Put a, m into lists like IceCow
-		a_thistime.sort
-		m_thistime.sort
-		a_list.append(a_thistime)
-		m_list.append(m_thistime)
+	### Put a, m into lists like IceCow; also e, i, mean(a), e, i,
+	### separation da and mutual Hill raadius Rh of colliding objects
+		thistime = pd.DataFrame(
+				[a_thistime,e_thistime,i_thistime,m_thistime],
+				index=['a','e','i','m']).transpose()
+		thistime_sorted = thistime.sort_values('a')
+		a_list.append(list(thistime_sorted['a']))
+		e_list.append(list(thistime_sorted['e']))
+		i_list.append(list(thistime_sorted['i']))
+		m_list.append(list(thistime_sorted['m']))
 		acoll = np.append(acoll,np.mean([a_self,a_other]))
+		ecoll = np.vstack((ecoll,[e_self,e_other]))
+		icoll = np.vstack((icoll,[i_self,i_other]))
+		mcoll = np.vstack((mcoll,[m_self,m_other]))
 		da = np.append(da,a_self-a_other)
 		rh2 = ((m_self+m_other)/(3.*Mcent))**(1./3.) * ((a_self+a_other)/2.)
 		Rh = np.append(Rh, rh2)
-		mnsep.append(np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
-		mdsep.append(np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
-	acoll = np.append(acoll, 0.)
-	da = np.append(da, 0.)
-	Rh = np.append(Rh, 0.)
+		mnsep.append(np.mean([a_thistime[k+1]-a_thistime[k] for k in range(len(a_thistime)-1)]))
+		mdsep.append(np.median([a_thistime[k+1]-a_thistime[k] for k in range(len(a_thistime)-1)]))
+	### Fill in blank final row of collision parameters to match length of 
+	### parameters with an end-of-simulation entry
+	acoll = np.append(acoll, np.nan)
+	ecoll = np.vstack((ecoll, [np.nan,np.nan]))
+	icoll = np.vstack((icoll, [np.nan,np.nan]))
+	mcoll = np.vstack((mcoll, [np.nan,np.nan]))
+	da = np.append(da, np.nan)
+	Rh = np.append(Rh, np.nan)
 
-	print(namelist)
+	print('final objects: {0}'.format(namelist))
 	### Get final masses and positions
 	line = subprocess.check_output(['tail', '-1', WhichDir+'/Aei/'+namelist[0]+'.aei'])
 	tMax = float(line.split()[0])
-	print(tMax)
+	print('simulation end time: {0:e}'.format(tMax))
 	a_thistime, m_thistime = [], []
 	for n in namelist:
-		a, m, tf = M.ReadAeiLine(WhichDir,n,tMax)
+		a, e, i, m, tf = M.ReadAeiLine(WhichDir,n,tMax)
 		a_thistime.append(a)
+		e_thistime.append(e)
+		i_thistime.append(i)
 		m_thistime.append(m)
-	a_thistime.sort
-	m_thistime.sort
-	a_list.append(a_thistime)
-	m_list.append(m_thistime)
-	mnsep.append(np.mean([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
-	mdsep.append(np.median([a_thistime[i+1]-a_thistime[i] for i in range(len(a_thistime)-1)]))
+	thistime = pd.DataFrame(
+			[a_thistime,e_thistime,i_thistime,m_thistime],
+			index=['a','e','i','m']).transpose()
+	thistime_sorted = thistime.sort_values('a')
+	a_list.append(list(thistime_sorted['a']))
+	e_list.append(list(thistime_sorted['e']))
+	i_list.append(list(thistime_sorted['i']))
+	m_list.append(list(thistime_sorted['m']))
+
+	mnsep.append(  np.mean([a_thistime[k+1]-a_thistime[k] for k in range(len(a_thistime)-1)]))
+	mdsep.append(np.median([a_thistime[k+1]-a_thistime[k] for k in range(len(a_thistime)-1)]))
 		
 	# insert 0 and tMax at beginning and end of timeline
 	tlist = np.insert(np.append(time,tMax),0,0.)
 
-	return np.array(a_list), np.array(m_list), tlist, acoll, da, Rh, CorS, mnsep, mdsep
+	return np.array(a_list), np.array(e_list), np.array(i_list), np.array(m_list), \
+		tlist, acoll, ecoll, icoll, mcoll, da, Rh, CorS, mnsep, mdsep
 
 ###############################################################################
 def PlotDiskMerge(a, m, tlist='default',
