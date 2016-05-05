@@ -31,9 +31,11 @@ echo 'directory cleaned'
 
 ### Run mercury
 ./merc_$tag
+mv *.tmp Out
 
 ### Run element
 ./elem_$tag
+mv *.aei Aei
 
 ### runtime Simulation
 t2=$(date +%s)
