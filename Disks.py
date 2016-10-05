@@ -4,6 +4,7 @@ import random, copy
 import Disks as d
 import Merc as M
 import numpy as np
+import pandas as pd
 from numpy import pi,sqrt
 from cgs_constants import mSun,mEarth,mMoon,mMars,AU,G
 import multiprocessing as mp
@@ -15,6 +16,9 @@ if (machine in ['hammer','chloe']):
 else:
 	import matplotlib.pyplot as plt
 	import pandas as pd
+	import matplotlib as mpl
+	import matplotlib.cm as cm
+
 
 tol = 1e-6	# tolerance in probability summing to 1.
 
@@ -325,13 +329,12 @@ def PlotDiskMerge(a, m, tlist='default',
 	plt.close('all')
 
 	### Set up plot objects
-	if tlist == 'default':
-		f, ax1 = plt.subplots(1)
-	else:
-		f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+#	if tlist == 'default':
+	f, ax1 = plt.subplots(1,2, sharey=True, figsize=(9,6.5), 
+                          gridspec_kw = {'width_ratios':[3, 1]})
 
 	# Make x values array and plot each timestep
-	x = np.array(len(a))
+	x = [0]*len(a)
 	for i in range(len(a)):
 		if tlist == 'default':
 			x[i] = [   i    for n in range(len(a[i]))]
@@ -339,122 +342,100 @@ def PlotDiskMerge(a, m, tlist='default',
 		else:
 			x[i] = [tlist[i] for n in range(len(a[i]))]
 			xlab = 'Time'
-#		ax1.scatter(x, a[i], s=1.,c=np.log(m[i]), lw=0.)
-	ax1.scatter(x, a, s=1.,c=np.log(m[i]), lw=0.)
+### Make normalized log(m) measure for plotting point size
 
-	(x1,x2),(y1,y2) = ax1.get_xlim(), ax1.get_ylim()
-#	x1=0.1
-	if not ylim == 'default':
-		ax1.set_ylim(ylim)
-		ax1.set_xscale('log')
-	ax1.set_xlabel(xlab)
-	ax1.set_ylabel('Semimajor Axis (AU)')
+### Flatten the nested lists
+	flatx = [item for sublist in x for item in sublist]
+	flata = [item for sublist in a for item in sublist]
+	flatm = [np.log10(item*mSun/mEarth) for sublist in m for item in sublist]
+
+### Calibrate the colormap
+### choose a color palette
+	cmap = plt.cm.get_cmap('gist_earth_r') #cm.rainbow
+### to set automatic limits on color palette
+#	smallest = min(flatm)*1.1
+#	biggest  = max(flatm)
+### to set manual limits on color palette
+	smallest = -2.
+	biggest  = 1.
+
+### Make plot
+	sc = ax1[0].scatter(flatx, flata, s=3., lw=0., 
+             c=flatm, cmap=cmap,
+             vmin = smallest, vmax = biggest)
+	(x1,x2),(y1,y2) = ax1[0].get_xlim(), ax1[0].get_ylim()
+	if ylim != 'default':
+		y1, y2 = ylim
+
+	ax1[0].set_xlim((-5,x2))
+	ax1[0].set_ylim((0,y2))
+
+	ax1[0].set_xlabel(xlab)
+	ax1[0].set_ylabel('Semimajor Axis (AU)')
 #	plt.title('Planetesimal Merging Heuristic')
 
+#-----------------------------------------------------------------------------#
+### Plot the planetary system in a second panel
+	lasta = np.array(a[-1])[pd.notnull(a[-1])]
+	lastm = np.array(m[-1])[pd.notnull(m[-1])]
+	assert len(lasta)==len(lastm), 'ERROR: Last row of m and a are different lengths!'
+
+	ax1[1].scatter([0]*len(lasta),  lasta,  s=lastm*mSun/mEarth*500.,  lw=0., 
+                   c=np.log10(lastm*mSun/mEarth), cmap=cmap,
+                   vmin = smallest, vmax = biggest)
+
+	ax1[1].set_xticks([])
+	f.subplots_adjust(wspace=0.05)
+
+#-----------------------------------------------------------------------------#
+### Make colorbar
+	### list of 'pretty' values at which to label the colorbar, if in range
+	ticklabels = np.array([10, 5,     3,     2,     1,
+                      0.5,   0.3,   0.2,   0.1,
+                      0.05,  0.03,  0.02,  0.01,
+                      0.005, 0.003, 0.002, 0.001])
+### log versions of the ticks
+	loglabels  = np.log10(ticklabels)
+### check which ones are actually in range
+	useticks = (loglabels >= smallest) & (loglabels <= biggest)
+### Create the colorbar
+	cbar = plt.colorbar(sc, ticks=list(loglabels[useticks]), label = 'Earth masses')
+### Label colorbar ticks
+	cbar.ax.set_yticklabels(ticklabels[useticks]);
+
+#-----------------------------------------------------------------------------#
+### commented out old things I wanted to plot once and may want to again eventually
 	### If time provided, make t vs. n plot
-	if tlist != 'default':
-		dt = np.array([tlist[i+1]-tlist[i] for i in range(len(tlist)-1)])
-		dRh = np.array(da)/np.array(Rh)
-#		clip_dt = np.array([(i < 5e6) for i in dt])
-#		clip_da = np.array([(i < 90) for i in da])
-#		clip = np.array([ clip_dt[i] & clip_da[i] for i in range(len(dt))])
-		da_sum = [np.sum(da[:i]) for i in range(len(da))]
+#	if tlist != 'default':
+#		dt = np.array([tlist[i+1]-tlist[i] for i in range(len(tlist)-1)])
+#		dRh = np.array(da)/np.array(Rh)
+##		clip_dt = np.array([(i < 5e6) for i in dt])
+##		clip_da = np.array([(i < 90) for i in da])
+##		clip = np.array([ clip_dt[i] & clip_da[i] for i in range(len(dt))])
+#		da_sum = [np.sum(da[:i]) for i in range(len(da))]
 
-		da2, dt2 = da[1:(len(da)-1)], dt[:(len(dt)-1)]
-		ac2, Rh2, dRh2 = acoll[1:(len(a)-1)], Rh[1:(len(Rh)-1)], dRh[1:(len(dRh)-1)]
+#		da2, dt2 = da[1:(len(da)-1)], dt[:(len(dt)-1)]
+#		ac2, Rh2, dRh2 = acoll[1:(len(a)-1)], Rh[1:(len(Rh)-1)], dRh[1:(len(dRh)-1)]
 
-		test1,test2,test3 = np.ones(len(ac2)),np.ones(len(ac2)),np.ones(len(ac2))
+#		test1,test2,test3 = np.ones(len(ac2)),np.ones(len(ac2)),np.ones(len(ac2))
 
-		ax2.set_xscale('log')
-		ax2.set_yscale('log')
-		ax2.scatter(da2,dt2, c=np.log(ac2))
-		ax2.set_xlabel('da')
-		ax2.set_ylabel('dt')
+#		ax2.set_xscale('log')
+#		ax2.set_yscale('log')
+#		ax2.scatter(da2,dt2, c=np.log(ac2))
+#		ax2.set_xlabel('da')
+#		ax2.set_ylabel('dt')
 
-		ax3.set_xscale('log')
-		ax3.set_yscale('log')
-		ax3.scatter(Rh2,dt2, c=np.log(ac2))
-		ax3.set_xlabel('Rh')
-		ax3.set_ylabel('dt')
+#		ax3.set_xscale('log')
+#		ax3.set_yscale('log')
+#		ax3.scatter(Rh2,dt2, c=np.log(ac2))
+#		ax3.set_xlabel('Rh')
+#		ax3.set_ylabel('dt')
 
-		ax4.set_xscale('log')
-		ax4.set_yscale('log')
-		ax4.scatter(dRh2,dt2, c=np.log(ac2))
-		ax4.set_xlabel('dRh')
-		ax4.set_ylabel('dt')
-
-#		plt.subplot(222)
-#		plt.xscale('log')
-#		plt.yscale('log')
-##		plt.plot(da2,dt2,'ro')
-#		plt.scatter(da2,dt2, c=test3)
-#		plt.xlabel('da')
-#		plt.ylabel('dt')
-
-#		plt.subplot(223)
-#		plt.plot(da2,dt2,'ro')
-##		plt.scatter(Rh[1:(len(Rh)-1)],dt[:(len(dt)-1)], c=a[1:(len(da)-1)])
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('Rh')
-#		plt.ylabel('dt')
-
-#		plt.subplot(224)
-#		plt.scatter(dRh[1:(len(dRh)-1)],dt[:(len(dt)-1)], c=a[1:(len(da)-1)])
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('dRh')
-#		plt.ylabel('dt')
-
-#		plt.subplot(222)
-#		plt.plot(tlist, range(len(a)), 'bo')
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('# of Collisions')
-#		plt.ylabel('Time')
-#		plt.title('')
-#		
-#		plt.subplot(223)
-#		plt.plot(da2[clip],dt[clip],'ro')
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('Object Separation')
-#		plt.ylabel('Time to Collision')
-#		plt.title('')
-
-#		plt.subplot(224)
-#		plt.plot(da_sum,tlist)
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('Cumulative Separations')
-#		plt.ylabel('Time')
-#		plt.title('')
-
-#		plt.subplot(222)
-#		plt.plot(tlist, mdsep, 'bo',
-#				 tlist, mnsep, 'ro')
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('Time')
-#		plt.ylabel('Average Separation')
-#		plt.title('')
-
-#		plt.subplot(223)
-#		plt.plot(dt, mnsep[1:], 'ro')
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('dt')
-#		plt.ylabel('Mean Separation')
-#		plt.title('')
-
-
-#		plt.subplot(224)
-#		plt.plot(dt, mdsep[1:], 'bo')
-#		plt.xscale('log')
-#		plt.yscale('log')
-#		plt.xlabel('dt')
-#		plt.ylabel('Median Separation')
-#		plt.title('')
+#		ax4.set_xscale('log')
+#		ax4.set_yscale('log')
+#		ax4.scatter(dRh2,dt2, c=np.log(ac2))
+#		ax4.set_xlabel('dRh')
+#		ax4.set_ylabel('dt')
 
 
 	### Save
@@ -701,13 +682,10 @@ class DebrisDisk(list):
 			prob  = d.Prob2D_new(sep2d, a2d)
 			flat  = np.sort(sep2d.flatten())
 			nzeros = len(flat[flat == 0.])
-			print(flat[(nzeros-1):(nzeros+4)])
 			minsep = flat[nzeros]
 
-		print(minsep)
 		# merge closest objects until all are spaced by nRh*RH2
 		while (minsep <= nRh):
-			print(t)
 			i,j = d.Roll(prob)
 			# merge i and j
 			planets, CorS = planets.MergeAny(i,j, EjProb=EjProb,CorS=CorS)
@@ -735,13 +713,9 @@ class DebrisDisk(list):
 				prob  = d.Prob2D_new(sep2d, a2d)
 				flat  = np.sort(sep2d.flatten())
 				nzeros = len(flat[flat == 0.])
-				print(flat[(nzeros-1):(nzeros+4)])
 				minsep = flat[nzeros]
 
 				index = min(i,j)
-				print(np.array(preva2d[:index,:index]) == np.array(a2d[:index,:index]))
-				print(np.array(preva2d[:index,:index]))
-				print(np.array(a2d[:index,:index]))
 			counter += 1
 
 		return planets, param_a, param_m, t, CorS
